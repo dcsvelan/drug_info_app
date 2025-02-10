@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MEDICUS: Essential Drug Information</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+  <script>
+    // Refined function to format FDA field values.
+    // Splits the value into a heading (if a colon exists) and content,
+    // then splits the content into paragraphs (based on newline or semicolon).
+    function formatFDAValue(value) {
+      if (!value) return "";
+      if (Array.isArray(value)) {
+        value = value.join(" ");
+      }
+      let formattedHTML = "";
+      if (value.includes(":")) {
+        // Split at the first colon into heading and content
+        let parts = value.split(/:(.+)/);
+        let heading = parts[0].trim();
+        let content = parts[1] ? parts[1].trim() : "";
+        formattedHTML += `<h3>${heading}:</h3>`;
+        // Split content by newline; if none, try splitting by semicolon
+        let paragraphs = content.split("\n");
+        if (paragraphs.length === 1) {
+          paragraphs = content.split(";");
+        }
+        paragraphs.forEach(para => {
+          para = para.trim();
+          if (para) {
+            formattedHTML += `<p>${para}</p>`;
+          }
+        });
+      } else {
+        // No colon: split by newline; if none, split by period followed by space.
+        let paragraphs = value.split("\n");
+        if (paragraphs.length === 1) {
+          paragraphs = value.split(". ");
+        }
+        paragraphs.forEach(para => {
+          para = para.trim();
+          if (para) {
+            formattedHTML += `<p>${para}</p>`;
+          }
+        });
+      }
+      return formattedHTML;
+    }
+
+    async function getDrugInfo() {
+      const drugName = document.getElementById('drugName').value;
+      // Update joke when Find is pressed
+      const jokes = [
+        "Aristotle: To actualize its potential.",
+        "Plato: For the greater good.",
+        "Socrates: To examine the other side.",
+        "Descartes: It had sufficient reason to believe it was dreaming.",
+        "Hume: Out of habit.",
+        "Kant: Out of a sense of duty.",
+        "Nietzsche: Because if you gaze too long across the road, the road gazes also across you.",
+        "Hegel: To fulfill the dialectical progression.",
+        "Marx: It was a historical inevitability.",
+        "Sartre: In order to act in good faith and be true to itself.",
+        "Camus: One must imagine Sisyphus happy and the chicken crossing the road.",
+        "Wittgenstein: The meaning of 'cross' was in the use, not in the action.",
+        "Derrida: The chicken was making a deconstructive statement on the binary opposition of 'this side' and 'that side.'",
+        "Heidegger: To authentically dwell in the world.",
+        "Foucault: Because of the societal structures and power dynamics at play.",
+        "Chomsky: For a syntactic, not pragmatic, purpose.",
+        "Buddha: If you meet the chicken on the road, kill it.",
+        "Laozi: The chicken follows its path naturally.",
+        "Confucius: The chicken crossed the road to reach the state of Ren.",
+        "Leibniz: In the best of all possible worlds, the chicken would cross the road."
+      ];
+      document.querySelector('.quote').textContent = jokes[Math.floor(Math.random() * jokes.length)];
+
+      const response = await fetch('/get_drug_info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ drug_name: drugName })
+      });
+      const data = await response.json();
+      const resultDiv = document.getElementById('result');
+      resultDiv.innerHTML = '';  // Clear previous results
+
+      if (response.ok) {
+        // --- Display RxNav Data in a table (no header text) ---
+        const rxnav = data.rxnav;
+        const rxnavTable = document.createElement('table');
+        const rxnavTbody = document.createElement('tbody');
+        for (const classType in rxnav.classes) {
+          if (rxnav.classes[classType].length > 0) {
+            const row = document.createElement('tr');
+            const tdType = document.createElement('td');
+            tdType.textContent = classType;
+            const tdClasses = document.createElement('td');
+            tdClasses.textContent = rxnav.classes[classType].join(", ");
+            row.appendChild(tdType);
+            row.appendChild(tdClasses);
+            rxnavTbody.appendChild(row);
+          }
+        }
+        rxnavTable.appendChild(rxnavTbody);
+        resultDiv.appendChild(rxnavTable);
+        resultDiv.appendChild(document.createElement('br'));
+
+        // --- Display FDA Data as Buttons ---
+        const fda = data.fda;
+        const fdaDiv = document.createElement('div');
+        fdaDiv.id = "fdaFields";
+        if (fda.results && fda.results.length > 0) {
+          const resultObj = fda.results[0];
+          // List of FDA keys to hide (including those that contain "table")
+          const hiddenFields = ["id", "set_id", "description", "effective_time", "spl_product_data_elements", "references", "dosage_forms_and_strengths", "version", "how_supplied", "questions", "openfda", "precautions_table", "keep_out_of_reach_of_children", "drug_interactions_table", "pharmacokinetics_table", "clinical_pharmacology_table", "adverse_reactions_table", "dosage_and_administration_table", "inactive_ingredient", "package_label_principal_display_panel"];
+          for (const key in resultObj) {
+            if (key.toLowerCase().includes("table")) continue;
+            if (hiddenFields.includes(key.toLowerCase())) continue;
+            // Create a button for this FDA field
+            const btn = document.createElement('button');
+            btn.className = "fda-btn";
+            btn.textContent = key;
+            
+            // Create a hidden div to display the formatted value
+            const valueDiv = document.createElement('div');
+            valueDiv.className = "fda-value";
+            // Ensure the value text is left aligned
+            valueDiv.style.textAlign = "left";
+            let value = resultObj[key];
+            if (Array.isArray(value)) {
+              value = value.join("\n");
+            }
+            valueDiv.innerHTML = formatFDAValue(value);
+            // Toggle display on button click
+            btn.addEventListener('click', function() {
+              valueDiv.style.display = (valueDiv.style.display === "none" || valueDiv.style.display === "") ? "block" : "none";
+            });
+            fdaDiv.appendChild(btn);
+            fdaDiv.appendChild(valueDiv);
+          }
+        } else {
+          fdaDiv.textContent = "No FDA data found.";
+        }
+        resultDiv.appendChild(fdaDiv);
+
+        // Store combined text for TTS and download
+        document.getElementById('resultText').value = resultDiv.innerText;
+        document.getElementById('actionButtons').style.display = "block";
+      } else {
+        resultDiv.textContent = data.error ? `Error: ${data.error}` : "No results found.";
+        document.getElementById('actionButtons').style.display = "none";
+      }
+    }
+
+    async function handleTTS() {
+      const text = document.getElementById('resultText').value;
+      if (!text) {
+        alert("No text available for speech.");
+        return;
+      }
+      await fetch('/speak', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: text })
+      });
+      alert("Text-to-Speech executed.");
+    }
+
+    async function downloadResults() {
+      const drugName = document.getElementById('drugName').value;
+      const response = await fetch('/download_results', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ drug_name: drugName })
+      });
+      if (!response.ok) {
+        alert("Download failed.");
+        return;
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.style.display = "none";
+      a.href = url;
+      a.download = drugName + "_drug_info.xlsx";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    }
+  </script>
+</head>
+<body>
+  <div class="container">
+    <h1>MEDICUS: Essential Drug Information</h1>
+    <h2>Why did the chicken cross the road?</h2>
+    <div class="quote">{{ quote }}</div>
+    <input type="text" id="drugName" placeholder="Enter drug name (e.g., Aspirin)">
+    <div class="buttons">
+      <button onclick="getDrugInfo()">Find</button>
+      <button onclick="handleTTS()">Read</button>
+      <button onclick="downloadResults()">Download</button>
+    </div>
+    <input type="hidden" id="resultText" value="">
+    <div id="result"></div>
+    <div id="actionButtons" style="display: none;"></div>
+  </div>
+</body>
+</html>

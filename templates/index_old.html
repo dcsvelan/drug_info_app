@@ -1,0 +1,135 @@
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FDA Drug Label Info</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <header>
+        <h1>Welcome to the FDA Drug Label Information App</h1>
+    </header>
+    <div class="container">
+        <p>{{ message }}</p>
+        <form id="drugForm">
+            <input type="text" id="drugName" placeholder="Enter drug name (e.g., Aspirin)" required>
+            <button type="submit" class="btn">Get Drug Label</button>
+        </form>
+        <h2>Results:</h2>
+        <!-- The table will be populated once data is returned -->
+        <table id="resultsTable" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Field</th>
+                    <th>Value</th>
+                </tr>
+            </thead>
+            <tbody id="resultsBody">
+            </tbody>
+        </table>
+        <div class="buttons" style="display: none;" id="actionButtons">
+            <button class="btn" id="findBtn">Find</button>
+            <button class="btn" id="readBtn">Read</button>
+            <button class="btn" id="downloadBtn">Download</button>
+        </div>
+    </div>
+    <script>
+        // When the form is submitted, call the /get_drug_label endpoint
+        document.getElementById("drugForm").addEventListener("submit", async function(e) {
+            e.preventDefault();
+            const drugName = document.getElementById("drugName").value;
+            const response = await fetch("/get_drug_label", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ drug_name: drugName })
+            });
+            const data = await response.json();
+            displayResults(data);
+        });
+
+        // Function to display JSON data in a table
+        function displayResults(data) {
+            // Assume data.results is an array with one object (the drug label info)
+            if (!data.results || data.results.length === 0) {
+                alert("No results found.");
+                return;
+            }
+            const result = data.results[0];
+            const tbody = document.getElementById("resultsBody");
+            tbody.innerHTML = ""; // Clear previous content
+
+            // For each key in the result object, add a row to the table.
+            for (const key in result) {
+                let value = result[key];
+                // If value is an array, join its items with a comma
+                if (Array.isArray(value)) {
+                    value = value.join(", ");
+                }
+                const row = document.createElement("tr");
+                const cellKey = document.createElement("td");
+                cellKey.textContent = key;
+                const cellValue = document.createElement("td");
+                cellValue.textContent = value;
+                row.appendChild(cellKey);
+                row.appendChild(cellValue);
+                tbody.appendChild(row);
+            }
+            document.getElementById("resultsTable").style.display = "table";
+            document.getElementById("actionButtons").style.display = "block";
+        }
+
+        // Handler for "Find" button (example: highlight matching text)
+        document.getElementById("findBtn").addEventListener("click", function() {
+            alert("Find functionality is under development.");
+        });
+
+        // Handler for "Read" button (example: call /speak endpoint)
+        document.getElementById("readBtn").addEventListener("click", async function() {
+            // For demonstration, we use the content of the "active_ingredient" field
+            const rows = document.getElementById("resultsBody").getElementsByTagName("tr");
+            let textToRead = "";
+            for (let row of rows) {
+                if (row.firstChild.textContent === "active_ingredient") {
+                    textToRead = row.lastChild.textContent;
+                    break;
+                }
+            }
+            if (!textToRead) {
+                alert("No active ingredient info available for reading.");
+                return;
+            }
+            const response = await fetch("/speak", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: textToRead })
+            });
+            const result = await response.json();
+            alert("Read: " + result.status);
+        });
+
+        // Handler for "Download" button (calls /download_results endpoint)
+        document.getElementById("downloadBtn").addEventListener("click", async function() {
+            const drugName = document.getElementById("drugName").value;
+            const response = await fetch("/download_results", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ drug_name: drugName })
+            });
+            if (!response.ok) {
+                alert("Download failed.");
+                return;
+            }
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.style.display = "none";
+            a.href = url;
+            a.download = drugName + "_drug_label.xlsx";
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+</html>

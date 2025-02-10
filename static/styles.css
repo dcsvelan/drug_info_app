@@ -1,0 +1,118 @@
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Arial', sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    color: #333;
+}
+
+.container {
+    text-align: center;
+    background: rgba(255, 255, 255, 0.85);
+    padding: 30px;
+    border-radius: 10px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 800px;
+}
+
+h1 {
+    margin-bottom: 20px;
+    font-size: 2.5em;
+    color: #2c3e50;
+}
+
+.quote {
+    font-style: italic;
+    margin-bottom: 20px;
+    color: #7f8c8d;
+}
+
+input[type="text"] {
+    width: 80%;
+    padding: 10px;
+    margin: 20px 0;
+    border: 1px solid #bdc3c7;
+    border-radius: 5px;
+    font-size: 1em;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.buttons {
+    margin-bottom: 20px;
+}
+
+button {
+    background: #3498db;
+    border: none;
+    color: white;
+    padding: 10px 20px;
+    margin: 5px;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 1em;
+    transition: background 0.3s;
+}
+
+button:hover {
+    background: #2980b9;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 20px;
+}
+
+th, td {
+    padding: 10px;
+    border: 1px solid #bdc3c7;
+    text-align: left;
+    background: #ecf0f1;
+}
+
+#result {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+/* Styling for FDA field buttons */
+.fda-btn {
+    background: #e67e22;
+    border: none;
+    color: white;
+    padding: 8px 15px;
+    margin: 5px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background 0.3s;
+}
+
+.fda-btn:hover {
+    background: #d35400;
+}
+
+.fda-value {
+    background: #f1c40f;
+    padding: 8px;
+    margin: 5px;
+    border-radius: 4px;
+    display: none;
+    font-size: 0.9em;
+    color: #333;
+}
+/* FDA field value formatted display */
+.fda-value {
+  background: #f1c40f;
+  padding: 8px;
+  margin: 5px;
+  border-radius: 4px;
+  display: none;
+  font-size: 0.9em;
+  color: #333;
+}
