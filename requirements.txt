@@ -14,7 +14,6 @@ openpyxl==3.1.5
 pypiwin32==223
 python-dotenv==1.0.1
 pyttsx3==2.98
-pywin32==308
 requests==2.32.3
 urllib3==2.3.0
 Werkzeug==3.1.3
