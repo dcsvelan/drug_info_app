@@ -1,56 +1,90 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>MEDICUS: Essential Drug Information</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-  <script>
-    // Refined function to format FDA field values.
-    // Splits the value into a heading (if a colon exists) and content,
-    // then splits the content into paragraphs (based on newline or semicolon).
-    function formatFDAValue(value) {
-      if (!value) return "";
-      if (Array.isArray(value)) {
-        value = value.join(" ");
-      }
-      let formattedHTML = "";
-      if (value.includes(":")) {
-        // Split at the first colon into heading and content
-        let parts = value.split(/:(.+)/);
-        let heading = parts[0].trim();
-        let content = parts[1] ? parts[1].trim() : "";
-        formattedHTML += `<h3>${heading}:</h3>`;
-        // Split content by newline; if none, try splitting by semicolon
-        let paragraphs = content.split("\n");
-        if (paragraphs.length === 1) {
-          paragraphs = content.split(";");
-        }
-        paragraphs.forEach(para => {
-          para = para.trim();
-          if (para) {
-            formattedHTML += `<p>${para}</p>`;
-          }
-        });
-      } else {
-        // No colon: split by newline; if none, split by period followed by space.
-        let paragraphs = value.split("\n");
-        if (paragraphs.length === 1) {
-          paragraphs = value.split(". ");
-        }
-        paragraphs.forEach(para => {
-          para = para.trim();
-          if (para) {
-            formattedHTML += `<p>${para}</p>`;
-          }
-        });
-      }
-      return formattedHTML;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Essential Drug Information from NIH & USFDA">
+    <title>Essential Drug Information</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="app-header">
+            <h1>MEDICUS: Drug Information</h1>
+            <p class="subtitle">Powered by NIH & USFDA</p>
+        </header>
 
-    async function getDrugInfo() {
-      const drugName = document.getElementById('drugName').value;
-      // Update joke when Find is pressed
+        <div class="quote-container">
+            <h2>Why did the chicken cross the road?</h2>
+            <div class="quote">{{ quote }}</div>
+        </div>
+
+        <div class="search-container">
+            <form id="drugForm" onsubmit="handleSubmit(event)">
+                <div class="input-group">
+                    <input 
+                        type="text" 
+                        id="drugName" 
+                        placeholder="Enter drug name (e.g., Aspirin)"
+                        aria-label="Drug name"
+                        required
+                    >
+                    <div class="loading-spinner" id="loadingSpinner"></div>
+                </div>
+                <div class="button-group">
+                    <button type="submit" class="primary-button" id="findButton">
+                        <span class="button-icon">🔍</span> Find
+                    </button>
+                    <button type="button" class="secondary-button" onclick="handleTTS()" id="ttsButton" disabled>
+                        <span class="button-icon">🔊</span> Read
+                    </button>
+                    <button type="button" class="secondary-button" onclick="downloadResults()" id="downloadButton" disabled>
+                        <span class="button-icon">⬇️</span> Download
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div id="result" class="result-container"></div>
+
+        <div class="user-actions">
+            <form action="{{ url_for('logout') }}" method="get">
+                <button type="submit" class="logout-button">Logout</button>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        let currentDrugName = '';
+        let isLoading = false;
+
+        function setLoading(loading) {
+            isLoading = loading;
+            document.getElementById('loadingSpinner').style.display = loading ? 'block' : 'none';
+            document.getElementById('findButton').disabled = loading;
+            document.getElementById('drugName').disabled = loading;
+        }
+
+        async function handleSubmit(event) {
+            event.preventDefault();
+            if (isLoading) return;
+
+            const drugName = document.getElementById('drugName').value.trim();
+            if (!drugName) return;
+
+            currentDrugName = drugName;
+            setLoading(true);
+            await getDrugInfo();
+            setLoading(false);
+        }
+
+        async function getDrugInfo() {
+        const drugName = document.getElementById('drugName').value;
+
+// Update joke when Find is pressed
       const jokes = [
         "Aristotle: To actualize its potential.",
         "Plato: For the greater good.",
@@ -75,135 +109,193 @@
       ];
       document.querySelector('.quote').textContent = jokes[Math.floor(Math.random() * jokes.length)];
 
-      const response = await fetch('/get_drug_info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ drug_name: drugName })
-      });
-      const data = await response.json();
-      const resultDiv = document.getElementById('result');
-      resultDiv.innerHTML = '';  // Clear previous results
+                const response = await fetch('/get_drug_info', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ drug_name: drugName })
+        });
+        const data = await response.json();
+        const resultDiv = document.getElementById('result');
+        resultDiv.innerHTML = '';  
 
-      if (response.ok) {
-        // --- Display RxNav Data in a table (no header text) ---
-        const rxnav = data.rxnav;
-        const rxnavTable = document.createElement('table');
-        const rxnavTbody = document.createElement('tbody');
-        for (const classType in rxnav.classes) {
-          if (rxnav.classes[classType].length > 0) {
-            const row = document.createElement('tr');
-            const tdType = document.createElement('td');
-            tdType.textContent = classType;
-            const tdClasses = document.createElement('td');
-            tdClasses.textContent = rxnav.classes[classType].join(", ");
-            row.appendChild(tdType);
-            row.appendChild(tdClasses);
-            rxnavTbody.appendChild(row);
-          }
-        }
-        rxnavTable.appendChild(rxnavTbody);
-        resultDiv.appendChild(rxnavTable);
-        resultDiv.appendChild(document.createElement('br'));
+        if (response.ok) {
+            // RxNav Data Table
+            const rxnav = data.rxnav;
+            const rxnavTable = document.createElement('table');
+            rxnavTable.classList.add('styled-table');
+            const rxnavTbody = document.createElement('tbody');
+            for (const classType in rxnav.classes) {
+                if (rxnav.classes[classType].length > 0) {
+                    const row = document.createElement('tr');
+                    const tdType = document.createElement('td');
+                    tdType.textContent = classType;
+                    tdType.classList.add('highlight-column'); 
+                    const tdClasses = document.createElement('td');
+                    tdClasses.textContent = rxnav.classes[classType].join(", ");
+                    row.appendChild(tdType);
+                    row.appendChild(tdClasses);
+                    rxnavTbody.appendChild(row);
+                }
+            }
+            rxnavTable.appendChild(rxnavTbody);
+            resultDiv.appendChild(rxnavTable);
+            resultDiv.appendChild(document.createElement('br'));
 
-        // --- Display FDA Data as Buttons ---
-        const fda = data.fda;
-        const fdaDiv = document.createElement('div');
-        fdaDiv.id = "fdaFields";
-        if (fda.results && fda.results.length > 0) {
-          const resultObj = fda.results[0];
-          // List of FDA keys to hide (including those that contain "table")
+            // FDA Data as Hidden Buttons
+            const fda = data.fda;
+            const fdaDiv = document.createElement('div');
+            fdaDiv.id = "fdaFields";
+            if (fda.results && fda.results.length > 0) {
+                const resultObj = fda.results[0];
+
+// List of FDA keys to hide (including those that contain "table")
           const hiddenFields = ["id", "set_id", "description", "effective_time", "spl_product_data_elements", "references", "dosage_forms_and_strengths", "version", "how_supplied", "questions", "openfda", "precautions_table", "keep_out_of_reach_of_children", "drug_interactions_table", "pharmacokinetics_table", "clinical_pharmacology_table", "adverse_reactions_table", "dosage_and_administration_table", "inactive_ingredient", "package_label_principal_display_panel"];
-          for (const key in resultObj) {
-            if (key.toLowerCase().includes("table")) continue;
+
+                for (const key in resultObj) {
+                    
+if (key.toLowerCase().includes("table")) continue;
             if (hiddenFields.includes(key.toLowerCase())) continue;
             // Create a button for this FDA field
-            const btn = document.createElement('button');
-            btn.className = "fda-btn";
-            btn.textContent = key;
-            
-            // Create a hidden div to display the formatted value
-            const valueDiv = document.createElement('div');
-            valueDiv.className = "fda-value";
-            // Ensure the value text is left aligned
-            valueDiv.style.textAlign = "left";
-            let value = resultObj[key];
-            if (Array.isArray(value)) {
-              value = value.join("\n");
+
+const btn = document.createElement('button');
+                    btn.className = "fda-btn";
+                    btn.textContent = key;
+
+                    const valueDiv = document.createElement('div');
+                    valueDiv.className = "fda-value";
+                    valueDiv.style.display = "none";  
+                    let value = resultObj[key];
+                    if (Array.isArray(value)) {
+                        value = value.join("\n");
+                    }
+                    valueDiv.innerHTML = value.replace(/\n/g, '<br>');
+
+                    btn.addEventListener('click', function() {
+                        valueDiv.style.display = valueDiv.style.display === "none" ? "block" : "none";
+                    });
+
+                    fdaDiv.appendChild(btn);
+                    fdaDiv.appendChild(valueDiv);
+                }
+            } else {
+                fdaDiv.textContent = "No FDA data found.";
             }
-            valueDiv.innerHTML = formatFDAValue(value);
-            // Toggle display on button click
-            btn.addEventListener('click', function() {
-              valueDiv.style.display = (valueDiv.style.display === "none" || valueDiv.style.display === "") ? "block" : "none";
-            });
-            fdaDiv.appendChild(btn);
-            fdaDiv.appendChild(valueDiv);
-          }
+            resultDiv.appendChild(fdaDiv);
         } else {
-          fdaDiv.textContent = "No FDA data found.";
+            resultDiv.textContent = data.error ? `Error: ${data.error}` : "No results found.";
         }
-        resultDiv.appendChild(fdaDiv);
-
-        // Store combined text for TTS and download
-        document.getElementById('resultText').value = resultDiv.innerText;
-        document.getElementById('actionButtons').style.display = "block";
-      } else {
-        resultDiv.textContent = data.error ? `Error: ${data.error}` : "No results found.";
-        document.getElementById('actionButtons').style.display = "none";
-      }
     }
 
-    async function handleTTS() {
-      const text = document.getElementById('resultText').value;
-      if (!text) {
-        alert("No text available for speech.");
-        return;
-      }
-      await fetch('/speak', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text })
-      });
-      alert("Text-to-Speech executed.");
-    }
+        async function handleTTS() {
+            const text = document.getElementById('result').innerText;
+            if (!text) {
+                showError('No content available for text-to-speech');
+                return;
+            }
 
-    async function downloadResults() {
-      const drugName = document.getElementById('drugName').value;
-      const response = await fetch('/download_results', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ drug_name: drugName })
-      });
-      if (!response.ok) {
-        alert("Download failed.");
-        return;
-      }
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.style.display = "none";
-      a.href = url;
-      a.download = drugName + "_drug_info.xlsx";
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
+            try {
+                const response = await fetch('/speak', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text })
+                });
+
+                if (!response.ok) {
+                    throw new Error('TTS request failed');
+                }
+
+                showSuccess('Text-to-speech started');
+            } catch (error) {
+                showError('Failed to start text-to-speech');
+            }
+        }
+
+        async function downloadResults() {
+            if (!currentDrugName) return;
+
+            try {
+                const response = await fetch('/download_results', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ drug_name: currentDrugName })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Download failed');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = url;
+                a.download = `${currentDrugName}_drug_info.xlsx`;
+                document.body.appendChild(a);
+                a.click();
+                window.URL.revokeObjectURL(url);
+                document.body.removeChild(a);
+
+            } catch (error) {
+                showError('Failed to download results');
+            }
+        }
+
+        function showError(message) {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'alert error';
+            errorDiv.textContent = message;
+            document.querySelector('.container').insertBefore(errorDiv, document.getElementById('result'));
+            setTimeout(() => errorDiv.remove(), 5000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.createElement('div');
+            successDiv.className = 'alert success';
+            successDiv.textContent = message;
+            document.querySelector('.container').insertBefore(successDiv, document.getElementById('result'));
+            setTimeout(() => successDiv.remove(), 5000);
+        }
+    </script>
+<style>
+    .styled-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 20px;
     }
-  </script>
-</head>
-<body>
-  <div class="container">
-    <h1>MEDICUS: Essential Drug Information</h1>
-    <h2>Why did the chicken cross the road?</h2>
-    <div class="quote">{{ quote }}</div>
-    <input type="text" id="drugName" placeholder="Enter drug name (e.g., Aspirin)">
-    <div class="buttons">
-      <button onclick="getDrugInfo()">Find</button>
-      <button onclick="handleTTS()">Read</button>
-      <button onclick="downloadResults()">Download</button>
-    </div>
-    <input type="hidden" id="resultText" value="">
-    <div id="result"></div>
-    <div id="actionButtons" style="display: none;"></div>
-  </div>
+    .styled-table td {
+        padding: 10px;
+        border: 1px solid #bdc3c7;
+        text-align: left;
+    }
+    .highlight-column {
+        background: #f1c40f;
+        font-weight: bold;
+    }
+    .fda-btn {
+        background: #e67e22;
+        border: none;
+        color: white;
+        padding: 8px 15px;
+        margin: 5px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.9em;
+        transition: background 0.3s;
+    }
+    .fda-btn:hover {
+        background: #d35400;
+    }
+    .fda-value {
+        background: #f1c40f;
+        padding: 8px;
+        margin: 5px;
+        border-radius: 4px;
+        display: none;
+        font-size: 0.9em;
+        color: #333;
+    }
+</style>
+
+
 </body>
 </html>

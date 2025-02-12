@@ -1,17 +1,81 @@
-from flask import Flask, request, jsonify, render_template, send_file
+from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for, flash
 import requests
-import pyttsx3
-import random
-from openpyxl import Workbook
-from io import BytesIO
 import os
 import json
 from dotenv import load_dotenv
+from openpyxl import Workbook
+from io import BytesIO
 import concurrent.futures
-import urllib.parse
+from functools import wraps
+import pyttsx3
+import random
+import asyncio
+from cachetools import TTLCache, LRUCache
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
+
+# Import authentication module
+from auth import db, bcrypt, User, login_required
 
 load_dotenv()
+
 app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "default_secret_key")
+
+# Database configuration
+db_folder = os.path.join(os.getcwd(), "database")
+if not os.path.exists(db_folder):
+    os.makedirs(db_folder)
+
+db_file = os.path.join(db_folder, "db.sqlite3")
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{db_file}"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize extensions with app
+db.init_app(app)
+bcrypt.init_app(app)
+
+# Authentication routes
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        if User.query.filter_by(username=username).first():
+            flash('Username already exists. Please choose another.', 'danger')
+            return redirect(url_for('register'))
+
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+        new_user = User(username=username, password=hashed_password)
+        db.session.add(new_user)
+        db.session.commit()
+
+        flash('Registration successful! Please log in.', 'success')
+        return redirect(url_for('login'))
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+
+        user = User.query.filter_by(username=username).first()
+        if user and bcrypt.check_password_hash(user.password, password):
+            session['user_id'] = user.id
+            flash('Login successful!', 'success')
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid username or password.', 'danger')
+            return redirect(url_for('login'))
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.pop('user_id', None)
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
 
 # ---------------------------
 # Mapping and Global Variables
@@ -75,11 +139,11 @@ def get_rxnav_cache_path(drug_name):
 def get_fda_cache_path(drug_name):
     safe_name = get_safe_name(drug_name)
     return os.path.join(CACHE_FOLDER, f"{safe_name}_fda.json")
-
 # ---------------------------
-# Helper Functions to Fetch Data
+# Drug Data Fetching
 # ---------------------------
 def fetch_rxnav_data(drug_name):
+    """Fetch RxNav drug class information and update cache."""
     if drug_name in rxnav_cache:
         return rxnav_cache[drug_name]
     rxnav_path = get_rxnav_cache_path(drug_name)
@@ -92,7 +156,7 @@ def fetch_rxnav_data(drug_name):
             url = f"https://rxnav.nlm.nih.gov/REST/rxclass/class/byDrugName.json?drugName={drug_name}&relaSource=ALL&relas={rela}"
             response = requests.get(url)
             if response.status_code != 200:
-                return {'error': 'Failed to fetch data from RxClass API'}
+                return {'error': 'Failed to fetch data from USFDA'}
             data = response.json()
             if 'rxclassDrugInfoList' in data:
                 drug_classes = data['rxclassDrugInfoList'].get('rxclassDrugInfo', [])
@@ -107,6 +171,7 @@ def fetch_rxnav_data(drug_name):
     return rxnav_data
 
 def fetch_fda_data(drug_name):
+    """Fetch FDA drug label information and update cache."""
     if drug_name in fda_cache:
         return fda_cache[drug_name]
     fda_path = get_fda_cache_path(drug_name)
@@ -114,23 +179,19 @@ def fetch_fda_data(drug_name):
         with open(fda_path, 'r') as f:
             fda_data = json.load(f)
     else:
-        # URL encode the drug name
-        encoded_drug = urllib.parse.quote(drug_name)
-        # Search both generic_name and brand_name fields
-        url = f'https://api.fda.gov/drug/label.json?search=(openfda.generic_name:"{encoded_drug}" OR openfda.brand_name:"{encoded_drug}")&limit=1'
+        url = f'https://api.fda.gov/drug/label.json?search=openfda.brand_name:"{drug_name}"&limit=1'
         response = requests.get(url)
         if response.status_code != 200:
-            return {'error': 'Failed to fetch data from the FDA API'}
+            return {'error': 'Failed to fetch data from the USFDA'}
         fda_data = response.json()
         with open(fda_path, 'w') as f:
             json.dump(fda_data, f)
     fda_cache[drug_name] = fda_data
     return fda_data
 
-# ---------------------------
-# Routes
-# ---------------------------
+# Main application routes
 @app.route('/')
+@login_required
 def index():
     selected_joke = random.choice(jokes)
     return render_template('index.html', quote=selected_joke)
@@ -141,20 +202,20 @@ def get_drug_info():
     if not drug_name:
         return jsonify({'error': 'No drug name provided'}), 400
 
-    # Fetch RxNav and FDA data concurrently
+    # Use ThreadPoolExecutor to fetch RxNav and FDA data concurrently.
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
         future_rxnav = executor.submit(fetch_rxnav_data, drug_name)
         future_fda = executor.submit(fetch_fda_data, drug_name)
         rxnav_data = future_rxnav.result()
         fda_data = future_fda.result()
 
-    # Check for errors in fetched data
+    # Check if either call returned an error:
     if 'error' in rxnav_data:
         return jsonify(rxnav_data), 500
     if 'error' in fda_data:
         return jsonify(fda_data), 500
 
-    # Merge "ask_doctor_or_pharmacist" into "ask_doctor" if both exist
+    # Merge "ask_doctor_or_pharmacist" into "ask_doctor" if both exist in FDA data.
     if fda_data.get('results') and fda_data['results'][0].get("ask_doctor") and fda_data['results'][0].get("ask_doctor_or_pharmacist"):
         doc_val = fda_data['results'][0]["ask_doctor"]
         pharm_val = fda_data['results'][0]["ask_doctor_or_pharmacist"]
@@ -165,7 +226,7 @@ def get_drug_info():
         fda_data['results'][0]["ask_doctor"] = doc_val + " " + pharm_val
         del fda_data['results'][0]["ask_doctor_or_pharmacist"]
 
-    # Update the joke when "Find" is pressed
+    # Update the joke when Find is pressed
     updated_joke = random.choice(jokes)
     combined = {
         "drug_name": drug_name,
@@ -185,50 +246,45 @@ def speak():
     engine.runAndWait()
     return jsonify({'status': 'success'})
 
+
 @app.route('/download_results', methods=['POST'])
+@login_required
 def download_results():
     drug_name = request.json.get('drug_name')
     if not drug_name:
         return jsonify({'error': 'No drug name provided'}), 400
 
-    # Load RxNav data
-    if drug_name in rxnav_cache:
-        rxnav_data = rxnav_cache[drug_name]
-    else:
-        rxnav_path = get_rxnav_cache_path(drug_name)
-        if not os.path.exists(rxnav_path):
-            return jsonify({'error': 'RxNav data not found'}), 404
-        with open(rxnav_path, 'r') as f:
-            rxnav_data = json.load(f)
-    # Load FDA data
-    if drug_name in fda_cache:
-        fda_data = fda_cache[drug_name]
-    else:
-        fda_path = get_fda_cache_path(drug_name)
-        if not os.path.exists(fda_path):
-            return jsonify({'error': 'FDA data not found'}), 404
-        with open(fda_path, 'r') as f:
-            fda_data = json.load(f)
+    # Fetch data before generating report
+    rxnav_data = fetch_rxnav_data(drug_name)
+    fda_data = fetch_fda_data(drug_name)
 
-    # Create an Excel workbook with two sheets: RxNav and FDA Data.
+    # Create Excel file
     wb = Workbook()
     ws1 = wb.active
     ws1.title = "RxNav Data"
     ws1.append(['Class Type', 'Classes'])
+    
     for class_type, classes in rxnav_data.get('classes', {}).items():
         ws1.append([class_type, ', '.join(classes)])
+    
     ws2 = wb.create_sheet(title="FDA Data")
     ws2.append(['Field', 'Value'])
-    results = fda_data.get('results', [{}])
-    if results:
-        for key, value in results[0].items():
-            if isinstance(value, list):
-                value = ", ".join(str(item) for item in value)
-            ws2.append([key, str(value)])
+    
+    for key, value in fda_data.items():
+        if isinstance(value, list):
+            value = ", ".join(str(item) for item in value)
+        ws2.append([key, str(value)])
+
     buffer = BytesIO()
     wb.save(buffer)
     buffer.seek(0)
-    return send_file(buffer, attachment_filename=f'{drug_name}_drug_info.xlsx', as_attachment=True)
+    return send_file(buffer, as_attachment=True, download_name=f'{drug_name}_drug_info.xlsx')
+
+# Create database tables
+def init_db():
+    with app.app_context():
+        db.create_all()
 
 if __name__ == '__main__':
+    init_db()
     app.run(debug=True)
