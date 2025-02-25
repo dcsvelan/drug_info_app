@@ -3,123 +3,63 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Essential Drug Information from NIH & USFDA">
-    <title>Essential Drug Information</title>
+    <title>MEDICUS_USFDA Drug Information</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
     <div class="container">
-        <header class="app-header">
-            <h1>MEDICUS: Drug Information</h1>
-            <p class="subtitle">Powered by NIH & USFDA</p>
-        </header>
+        <h1>MEDICUS_USFDA Drug Information</h1>
+        <h2>Why did the chicken cross the road?</h2>
+        <div class="quote">{{ quote }}</div>
 
-        <div class="quote-container">
-            <h2>Why did the chicken cross the road?</h2>
-            <div class="quote">{{ quote }}</div>
-        </div>
+        <form id="drugForm">
+            <input type="text" id="drugName" placeholder="Enter drug name (e.g., Aspirin)">
+            <div class="buttons">
+                <button type="button" onclick="getDrugInfo()">Find</button>
+                <button type="button" onclick="handleTTS()">Read</button>
+                <button type="button" onclick="downloadResults()">Download</button>
+            </div>
+        </form>
 
-        <div class="search-container">
-            <form id="drugForm" onsubmit="handleSubmit(event)">
-                <div class="input-group">
-                    <input 
-                        type="text" 
-                        id="drugName" 
-                        placeholder="Enter drug name (e.g., Aspirin)"
-                        aria-label="Drug name"
-                        required
-                    >
-                    <div class="loading-spinner" id="loadingSpinner"></div>
-                </div>
-                <div class="button-group">
-                    <button type="submit" class="primary-button" id="findButton">
-                        <span class="button-icon">🔍</span> Find
-                    </button>
-                    <button type="button" class="secondary-button" onclick="handleTTS()" id="ttsButton" disabled>
-                        <span class="button-icon">🔊</span> Read
-                    </button>
-                    <button type="button" class="secondary-button" onclick="downloadResults()" id="downloadButton" disabled>
-                        <span class="button-icon">⬇️</span> Download
-                    </button>
-                </div>
-            </form>
-        </div>
+        <div id="result"></div>
 
-        <div id="result" class="result-container"></div>
-
-        <div class="user-actions">
-            <form action="{{ url_for('logout') }}" method="get">
-                <button type="submit" class="logout-button">Logout</button>
-            </form>
-        </div>
+        <form action="{{ url_for('logout') }}" method="get">
+            <button type="submit">Logout</button>
+        </form>
     </div>
 
-    <script>
-        let currentDrugName = '';
-        let isLoading = false;
-
-        function setLoading(loading) {
-            isLoading = loading;
-            document.getElementById('loadingSpinner').style.display = loading ? 'block' : 'none';
-            document.getElementById('findButton').disabled = loading;
-            document.getElementById('drugName').disabled = loading;
+<script>
+    // Function to format FDA field values (preserves line breaks)
+    function formatFDAValue(value) {
+        if (!value) return "";
+        if (Array.isArray(value)) {
+            value = value.join(" ");
         }
+        return value.replace(/\n/g, '<br>');
+    }
 
-        async function handleSubmit(event) {
-            event.preventDefault();
-            if (isLoading) return;
-
-            const drugName = document.getElementById('drugName').value.trim();
-            if (!drugName) return;
-
-            currentDrugName = drugName;
-            setLoading(true);
-            await getDrugInfo();
-            setLoading(false);
-        }
-
-        async function getDrugInfo() {
+    async function getDrugInfo() {
         const drugName = document.getElementById('drugName').value;
+        // Update joke when Find is pressed (optional)
+        const jokes = [
+            "Aristotle: To actualize its potential.",
+            "Plato: For the greater good.",
+            "Socrates: To examine the other side.",
+            "Descartes: It had sufficient reason to believe it was dreaming."
+        ];
+        document.querySelector('.quote').textContent = jokes[Math.floor(Math.random() * jokes.length)];
 
-// Update joke when Find is pressed
-      const jokes = [
-        "Aristotle: To actualize its potential.",
-        "Plato: For the greater good.",
-        "Socrates: To examine the other side.",
-        "Descartes: It had sufficient reason to believe it was dreaming.",
-        "Hume: Out of habit.",
-        "Kant: Out of a sense of duty.",
-        "Nietzsche: Because if you gaze too long across the road, the road gazes also across you.",
-        "Hegel: To fulfill the dialectical progression.",
-        "Marx: It was a historical inevitability.",
-        "Sartre: In order to act in good faith and be true to itself.",
-        "Camus: One must imagine Sisyphus happy and the chicken crossing the road.",
-        "Wittgenstein: The meaning of 'cross' was in the use, not in the action.",
-        "Derrida: The chicken was making a deconstructive statement on the binary opposition of 'this side' and 'that side.'",
-        "Heidegger: To authentically dwell in the world.",
-        "Foucault: Because of the societal structures and power dynamics at play.",
-        "Chomsky: For a syntactic, not pragmatic, purpose.",
-        "Buddha: If you meet the chicken on the road, kill it.",
-        "Laozi: The chicken follows its path naturally.",
-        "Confucius: The chicken crossed the road to reach the state of Ren.",
-        "Leibniz: In the best of all possible worlds, the chicken would cross the road."
-      ];
-      document.querySelector('.quote').textContent = jokes[Math.floor(Math.random() * jokes.length)];
-
-                const response = await fetch('/get_drug_info', {
+        const response = await fetch('/get_drug_info', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ drug_name: drugName })
         });
         const data = await response.json();
         const resultDiv = document.getElementById('result');
-        resultDiv.innerHTML = '';  
+        resultDiv.innerHTML = '';  // Clear previous results
 
         if (response.ok) {
-            // RxNav Data Table
+            // --- Display RxNav Data in a Table --- 
             const rxnav = data.rxnav;
             const rxnavTable = document.createElement('table');
             rxnavTable.classList.add('styled-table');
@@ -129,7 +69,7 @@
                     const row = document.createElement('tr');
                     const tdType = document.createElement('td');
                     tdType.textContent = classType;
-                    tdType.classList.add('highlight-column'); 
+                    tdType.classList.add('highlight-column'); // Highlight first column
                     const tdClasses = document.createElement('td');
                     tdClasses.textContent = rxnav.classes[classType].join(", ");
                     row.appendChild(tdType);
@@ -141,39 +81,33 @@
             resultDiv.appendChild(rxnavTable);
             resultDiv.appendChild(document.createElement('br'));
 
-            // FDA Data as Hidden Buttons
+            // --- Display FDA Data as Hidden Buttons ---
             const fda = data.fda;
             const fdaDiv = document.createElement('div');
             fdaDiv.id = "fdaFields";
             if (fda.results && fda.results.length > 0) {
                 const resultObj = fda.results[0];
-
-// List of FDA keys to hide (including those that contain "table")
-          const hiddenFields = ["id", "set_id", "description", "effective_time", "spl_product_data_elements", "references", "dosage_forms_and_strengths", "version", "how_supplied", "questions", "openfda", "precautions_table", "keep_out_of_reach_of_children", "drug_interactions_table", "pharmacokinetics_table", "clinical_pharmacology_table", "adverse_reactions_table", "dosage_and_administration_table", "inactive_ingredient", "package_label_principal_display_panel"];
-
+                // Define FDA keys to hide, if needed, to filter out non-relevant fields.
+                const hiddenFields = ["id", "set_id", "description", "effective_time", "spl_product_data_elements", "references", "dosage_forms_and_strengths", "version", "how_supplied", "questions", "openfda", "precautions_table", "keep_out_of_reach_of_children", "drug_interactions_table", "pharmacokinetics_table", "clinical_pharmacology_table", "adverse_reactions_table", "dosage_and_administration_table", "inactive_ingredient", "package_label_principal_display_panel"];
                 for (const key in resultObj) {
-                    
-if (key.toLowerCase().includes("table")) continue;
-            if (hiddenFields.includes(key.toLowerCase())) continue;
-            // Create a button for this FDA field
-
-const btn = document.createElement('button');
+                    if (key.toLowerCase().includes("table") || hiddenFields.includes(key.toLowerCase())) continue;
+                    const btn = document.createElement('button');
                     btn.className = "fda-btn";
                     btn.textContent = key;
-
+                    
                     const valueDiv = document.createElement('div');
                     valueDiv.className = "fda-value";
-                    valueDiv.style.display = "none";  
+                    valueDiv.style.display = "none";
                     let value = resultObj[key];
                     if (Array.isArray(value)) {
                         value = value.join("\n");
                     }
-                    valueDiv.innerHTML = value.replace(/\n/g, '<br>');
-
+                    valueDiv.innerHTML = formatFDAValue(value);
+                    
                     btn.addEventListener('click', function() {
-                        valueDiv.style.display = valueDiv.style.display === "none" ? "block" : "none";
+                        valueDiv.style.display = (valueDiv.style.display === "none" || valueDiv.style.display === "") ? "block" : "none";
                     });
-
+                    
                     fdaDiv.appendChild(btn);
                     fdaDiv.appendChild(valueDiv);
                 }
@@ -186,76 +120,45 @@ const btn = document.createElement('button');
         }
     }
 
-        async function handleTTS() {
-            const text = document.getElementById('result').innerText;
-            if (!text) {
-                showError('No content available for text-to-speech');
-                return;
-            }
-
-            try {
-                const response = await fetch('/speak', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text })
-                });
-
-                if (!response.ok) {
-                    throw new Error('TTS request failed');
-                }
-
-                showSuccess('Text-to-speech started');
-            } catch (error) {
-                showError('Failed to start text-to-speech');
-            }
+    async function handleTTS() {
+        const text = document.getElementById('result').innerText;
+        if (!text) {
+            alert("No text available for speech.");
+            return;
         }
+        await fetch('/speak', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: text })
+        });
+        alert("Text-to-Speech executed.");
+    }
 
-        async function downloadResults() {
-            if (!currentDrugName) return;
-
-            try {
-                const response = await fetch('/download_results', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ drug_name: currentDrugName })
-                });
-
-                if (!response.ok) {
-                    throw new Error('Download failed');
-                }
-
-                const blob = await response.blob();
-                const url = window.URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = url;
-                a.download = `${currentDrugName}_drug_info.xlsx`;
-                document.body.appendChild(a);
-                a.click();
-                window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
-
-            } catch (error) {
-                showError('Failed to download results');
-            }
+    async function downloadResults() {
+        const drugName = document.getElementById('drugName').value;
+        const response = await fetch('/download_results', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ drug_name: drugName })
+        });
+        if (!response.ok) {
+            alert("Download failed.");
+            return;
         }
+        
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.style.display = "none";
+        a.href = url;
+        a.download = drugName + "_drug_info.xlsx";
+        document.body.appendChild(a);
+        a.click();
+        window.URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+    }
+</script>
 
-        function showError(message) {
-            const errorDiv = document.createElement('div');
-            errorDiv.className = 'alert error';
-            errorDiv.textContent = message;
-            document.querySelector('.container').insertBefore(errorDiv, document.getElementById('result'));
-            setTimeout(() => errorDiv.remove(), 5000);
-        }
-
-        function showSuccess(message) {
-            const successDiv = document.createElement('div');
-            successDiv.className = 'alert success';
-            successDiv.textContent = message;
-            document.querySelector('.container').insertBefore(successDiv, document.getElementById('result'));
-            setTimeout(() => successDiv.remove(), 5000);
-        }
-    </script>
 <style>
     .styled-table {
         width: 100%;
@@ -295,7 +198,6 @@ const btn = document.createElement('button');
         color: #333;
     }
 </style>
-
 
 </body>
 </html>
