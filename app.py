@@ -14,6 +14,16 @@ from cachetools import TTLCache, LRUCache
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def greet_json():
+    return {"Hello": "World!"}
+
+
+
 # Import authentication module
 from auth import db, bcrypt, User, login_required
 
